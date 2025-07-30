@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
 from keep_alive import keep_alive
@@ -45,7 +45,6 @@ async def on_voice_state_update(member, before, after):
     now = datetime.now()
     channel = bot.get_channel(LOG_CHANNEL_ID)
 
-    # ユーザーが新しいVCに参加（入室 or 移動）
     if before.channel != after.channel:
         if before.channel is not None:
             start_time = vc_start_times.pop(member.id, None)
@@ -80,7 +79,7 @@ async def voicetime(interaction: discord.Interaction, from_date: str, to_date: s
         dt_from = datetime.strptime(from_date, "%Y-%m-%d")
         dt_to = datetime.strptime(to_date, "%Y-%m-%d")
     except ValueError:
-        await interaction.followup.send("❌ 日付の形式が正しくありません。`YYYY-MM-DD` 形式で入力してください。")
+        await interaction.followup.send("❌ 日付の形式が正しくありません。`YYYY-MM-DD` で入力してください。")
         return
 
     total_seconds = 0
@@ -101,6 +100,39 @@ async def voicetime(interaction: discord.Interaction, from_date: str, to_date: s
         f"{h:02}時間{m:02}分{s:02}秒"
     )
     await interaction.followup.send(msg)
+
+@tree.command(name="vctime_ranking", description="指定期間の通話時間ランキングを表示します")
+@app_commands.describe(from_date="開始日 (例: 2025-07-01)", to_date="終了日 (例: 2025-07-30)")
+async def vctime_ranking(interaction: discord.Interaction, from_date: str, to_date: str):
+    await interaction.response.defer()
+    dt_from = datetime.strptime(from_date, "%Y-%m-%d")
+    dt_to = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+
+    rankings = []
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            for uid, sessions in data.items():
+                total = 0
+                for s in sessions:
+                    j = datetime.strptime(s["join"], "%Y-%m-%d %H:%M:%S")
+                    l = datetime.strptime(s["leave"], "%Y-%m-%d %H:%M:%S")
+                    if dt_from <= j < dt_to:
+                        total += int((l - j).total_seconds())
+                if total > 0:
+                    rankings.append((int(uid), total))
+
+    rankings.sort(key=lambda x: x[1], reverse=True)
+    lines = [f"📊 通話時間ランキング（{from_date}〜{to_date}）\n"]
+    for i, (uid, secs) in enumerate(rankings, start=1):
+        h, m = divmod(secs // 60, 60)
+        s = secs % 60
+        member = interaction.guild.get_member(uid)
+        name = member.display_name if member else f"ユーザー{uid}"
+        place = "🥇🥈🥉"[i - 1] if i <= 3 else f"{i}位"
+        lines.append(f"{place} {name} — {h:02}時間{m:02}分{s:02}秒")
+
+    await interaction.followup.send("\n".join(lines) if lines else "該当するログがありません。")
 
 keep_alive()
 bot.run(os.environ["DISCORD_TOKEN"])
