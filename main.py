@@ -69,11 +69,19 @@ async def on_voice_state_update(member, before, after):
             embed.add_field(name="参加時間", value=now.strftime('%Y/%m/%d %H:%M:%S'), inline=False)
             await channel.send(embed=embed)
 
-@tree.command(name="voicetime", description="通話時間を集計します")
-@app_commands.describe(from_date="集計開始日 (例: 2025-07-01)", to_date="集計終了日 (例: 2025-07-30)")
-async def voicetime(interaction: discord.Interaction, from_date: str, to_date: str):
+@tree.command(name="voicetime", description="通話時間を集計します（他ユーザーも可）")
+@app_commands.describe(
+    from_date="集計開始日 (例: 2025-07-01)",
+    to_date="集計終了日 (例: 2025-07-30)",
+    target_user="（任意）通話時間を確認したい相手"
+)
+async def voicetime(
+    interaction: discord.Interaction,
+    from_date: str,
+    to_date: str,
+    target_user: discord.Member = None  # ← 任意引数を追加
+):
     await interaction.response.defer()
-    user_id = str(interaction.user.id)
 
     try:
         dt_from = datetime.strptime(from_date, "%Y-%m-%d")
@@ -81,6 +89,9 @@ async def voicetime(interaction: discord.Interaction, from_date: str, to_date: s
     except ValueError:
         await interaction.followup.send("❌ 日付の形式が正しくありません。`YYYY-MM-DD` で入力してください。")
         return
+
+    target = target_user or interaction.user
+    user_id = str(target.id)
 
     total_seconds = 0
     if os.path.exists(LOG_FILE):
@@ -96,12 +107,12 @@ async def voicetime(interaction: discord.Interaction, from_date: str, to_date: s
     h, m = divmod(total_seconds // 60, 60)
     s = total_seconds % 60
     msg = (
-        f"📊 **{from_date} 〜 {to_date} の通話時間**\n"
+        f"📊 **{target.display_name} の {from_date} 〜 {to_date} の通話時間**\n"
         f"{h:02}時間{m:02}分{s:02}秒"
     )
     await interaction.followup.send(msg)
 
-@tree.command(name="vctime_ranking", description="指定期間の通話時間ランキングを表示します")
+@tree.command(name="voicetimer", description="指定期間の通話時間ランキングを表示します")
 @app_commands.describe(from_date="開始日 (例: 2025-07-01)", to_date="終了日 (例: 2025-07-30)")
 async def vctime_ranking(interaction: discord.Interaction, from_date: str, to_date: str):
     await interaction.response.defer()
