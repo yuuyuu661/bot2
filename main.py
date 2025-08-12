@@ -237,18 +237,30 @@ async def voicetimer(interaction: discord.Interaction, from_date: str, to_date: 
         await interaction.followup.send("❌ 日付の形式が正しくありません。`YYYY-MM-DD` で入力してください。")
         return
 
-    data = load_logs()
-    adj = load_adjust()
-    rankings: list[tuple[int, int]] = []  # (user_id, seconds)
+    data = load_logs()       # {"user_id": [{join, leave}, ...]}
+    adj  = load_adjust()     # {"user_id": seconds}
 
-    for uid_str, sessions in data.items():
-        uid = int(uid_str)
-        total = 0
-        for s in sessions:
+    # ★ ログのuid と 調整のuid のユニオンで集計対象を作る
+    uid_all = set(map(int, data.keys())) | set(map(int, adj.keys()))
+
+    rankings: list[tuple[int, int]] = []  # (user_id, seconds)
+    for uid in uid_all:
+        uid_str = str(uid)
+
+        # 期間に重なるセッション秒数を集計
+        period_secs = 0
+        for s in data.get(uid_str, []):
             j = datetime.strptime(s["join"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
             l = datetime.strptime(s["leave"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
-            total += overlap_seconds(j, l, dt_from, dt_to)
-        total += int(adj.get(uid_str, 0))  # 調整分
+            period_secs += overlap_seconds(j, l, dt_from, dt_to)
+
+        # 手動調整は“期間に関わらず”合算（仕様通り）
+        adj_secs = int(adj.get(uid_str, 0))
+
+        total = period_secs + adj_secs
+        if total < 0:
+            total = 0  # マイナスになっても0にクリップ
+
         if total > 0:
             rankings.append((uid, total))
 
@@ -330,3 +342,4 @@ async def voicetime_sub(
 # ====== 起動 ======
 keep_alive()
 bot.run(os.environ["DISCORD_TOKEN"])
+
